@@ -1,0 +1,7 @@
+.env
+node_modules
+.agent
+stitch_hackathon_design_architect
+dist/
+docs
+*.zip

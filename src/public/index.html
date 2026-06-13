@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html class="light" lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="MindCompanion - a supportive AI wellness companion for students preparing for high-stakes exams. Reflect in a journal and receive empathetic, structured insights." />
+  <title>MindCompanion - Daily Check-in</title>
+  <link href="https://fonts.googleapis.com" rel="preconnect" />
+  <link crossorigin href="https://fonts.gstatic.com" rel="preconnect" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <script id="tailwind-config">
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: "#266657",
+            "primary-container": "#41806f",
+            "on-primary": "#ffffff",
+            "on-primary-container": "#f4fff9",
+            secondary: "#36656e",
+            "secondary-container": "#baebf5",
+            "on-secondary-container": "#3c6b75",
+            tertiary: "#8b4c11",
+            "tertiary-container": "#a96428",
+            "tertiary-fixed": "#ffdcc4",
+            "on-tertiary-fixed": "#2f1400",
+            error: "#ba1a1a",
+            "error-container": "#ffdad6",
+            "on-error-container": "#7a0009",
+            background: "#faf9f5",
+            surface: "#faf9f5",
+            "surface-bright": "#ffffff",
+            "surface-container-lowest": "#ffffff",
+            "surface-container-low": "#f4f4f0",
+            "surface-container": "#efeeea",
+            "surface-container-high": "#e9e8e4",
+            "surface-variant": "#e3e2df",
+            "on-surface": "#1b1c1a",
+            "on-surface-variant": "#3f4945",
+            outline: "#5c6560",
+            "outline-variant": "#bfc9c4"
+          },
+          borderRadius: { DEFAULT: "0.5rem", lg: "1rem", xl: "1.5rem", full: "9999px" },
+          fontFamily: {
+            display: ['"Plus Jakarta Sans"', "ui-sans-serif", "system-ui"],
+            sans: ['"Plus Jakarta Sans"', "ui-sans-serif", "system-ui"],
+            label: ["Inter", "ui-sans-serif", "system-ui"]
+          }
+        }
+      }
+    };
+  </script>
+  <style type="text/tailwindcss">
+    .material-symbols-outlined { font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24; }
+    .ambient { box-shadow: 0 10px 40px -12px rgba(38, 102, 87, 0.12); }
+    /* Mood chips: a real radio input styled as a touchable chip */
+    .chip { @apply flex cursor-pointer items-center gap-2 rounded-full border border-outline-variant bg-surface-container-low px-4 py-2 font-label text-sm text-on-surface-variant transition-colors; }
+    .mood-chip .peer:checked + .chip { @apply border-primary bg-primary-container/30 font-semibold text-primary; }
+    .mood-chip .peer:focus-visible + .chip { @apply ring-2 ring-primary ring-offset-2 ring-offset-background; }
+    .chip:hover { @apply bg-surface-container; }
+    /* Respect reduced-motion preferences */
+    @media (prefers-reduced-motion: reduce) {
+      .animate-spin, .animate-pulse { animation: none !important; }
+    }
+  </style>
+</head>
+<body class="min-h-screen bg-background font-sans text-on-surface antialiased">
+  <!-- Header -->
+  <header class="sticky top-0 z-40 h-16 border-b border-outline-variant/40 bg-surface/85 backdrop-blur-md">
+    <div class="mx-auto flex h-full max-w-[1200px] items-center justify-between px-6">
+      <div class="flex items-center gap-2">
+        <span class="material-symbols-outlined text-primary" aria-hidden="true" style="font-variation-settings:'FILL' 1;">spa</span>
+        <span class="font-display text-xl font-bold text-primary">MindCompanion</span>
+      </div>
+      <span class="rounded-full border border-primary/20 bg-primary/5 px-3 py-1 font-label text-xs font-medium text-primary">
+        Student Wellness
+      </span>
+    </div>
+  </header>
+
+  <!-- Standing help bar: always reachable, even before submitting -->
+  <div class="border-b border-tertiary/20 bg-tertiary-fixed/40">
+    <div class="mx-auto flex max-w-[1200px] flex-wrap items-center justify-center gap-x-2 gap-y-1 px-6 py-2 text-center font-label text-xs text-on-tertiary-fixed">
+      <span class="material-symbols-outlined text-base" aria-hidden="true">favorite</span>
+      <span>In crisis or thinking about self-harm? You deserve support right now —</span>
+      <a class="font-semibold underline decoration-2 underline-offset-2 hover:text-tertiary" href="#help">see helplines</a>
+    </div>
+  </div>
+
+  <main class="mx-auto max-w-[1200px] px-6 py-8">
+    <!-- Greeting -->
+    <div class="mb-8 flex flex-col gap-1">
+      <p class="font-label text-sm text-outline">Your private space</p>
+      <h1 class="font-display text-3xl font-bold text-on-surface">Daily Check-in</h1>
+      <p class="max-w-2xl text-on-surface-variant">
+        Take a deep breath and write whatever is on your mind. Your companion will gently
+        reflect back what it notices and offer something supportive.
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-12">
+      <!-- Left: Journal form -->
+      <section class="lg:col-span-7" aria-labelledby="form-heading">
+        <form id="journal-form" class="flex flex-col gap-6">
+          <h2 id="form-heading" class="sr-only">Journal entry form</h2>
+
+          <!-- Target exam -->
+          <div class="rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-6 ambient">
+            <label for="target-exam" class="mb-2 block font-display text-lg font-semibold text-on-surface">
+              What are you preparing for?
+            </label>
+            <input
+              id="target-exam"
+              name="targetExam"
+              list="exam-options"
+              required
+              autocomplete="off"
+              class="w-full rounded-lg border-2 border-outline-variant bg-surface-container-low px-4 py-3 text-on-surface placeholder:text-outline focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+              placeholder="e.g. JEE, NEET, UPSC, Board Exams"
+            />
+            <datalist id="exam-options">
+              <option value="JEE"></option>
+              <option value="NEET"></option>
+              <option value="UPSC"></option>
+              <option value="GATE"></option>
+              <option value="CAT"></option>
+              <option value="Board Exams"></option>
+            </datalist>
+          </div>
+
+          <!-- Mood selector (radio group mapped to a 1-10 score) -->
+          <div class="rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-6 ambient">
+            <fieldset>
+              <legend class="mb-4 font-display text-lg font-semibold text-on-surface">
+                How are you feeling right now?
+              </legend>
+              <div class="flex flex-wrap gap-3" role="radiogroup" aria-label="Current mood">
+                <!-- Each option is a real radio input styled as a chip for accessibility -->
+                <label class="mood-chip">
+                  <input type="radio" name="mood" value="8" class="peer sr-only" />
+                  <span class="chip">
+                    <span class="material-symbols-outlined text-xl" aria-hidden="true">sentiment_calm</span>
+                    Calm
+                  </span>
+                </label>
+                <label class="mood-chip">
+                  <input type="radio" name="mood" value="6" class="peer sr-only" checked />
+                  <span class="chip">
+                    <span class="material-symbols-outlined text-xl" aria-hidden="true">sentiment_satisfied</span>
+                    Okay
+                  </span>
+                </label>
+                <label class="mood-chip">
+                  <input type="radio" name="mood" value="4" class="peer sr-only" />
+                  <span class="chip">
+                    <span class="material-symbols-outlined text-xl" aria-hidden="true">sentiment_dissatisfied</span>
+                    Anxious
+                  </span>
+                </label>
+                <label class="mood-chip">
+                  <input type="radio" name="mood" value="2" class="peer sr-only" />
+                  <span class="chip">
+                    <span class="material-symbols-outlined text-xl" aria-hidden="true">sentiment_sad</span>
+                    Overwhelmed
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+          </div>
+
+          <!-- Journal text -->
+          <div class="flex flex-col rounded-xl border border-outline-variant/40 bg-surface-container-lowest ambient focus-within:ring-2 focus-within:ring-primary/20">
+            <div class="border-b border-outline-variant/30 px-6 pt-5">
+              <label for="journal-text" class="font-display text-lg font-semibold text-on-surface">
+                What's on your mind?
+              </label>
+            </div>
+            <textarea
+              id="journal-text"
+              name="journalText"
+              rows="8"
+              required
+              maxlength="2000"
+              aria-describedby="char-count"
+              class="w-full resize-none rounded-b-xl bg-transparent p-6 text-lg leading-relaxed text-on-surface placeholder:text-outline-variant focus:outline-none"
+              placeholder="Write whatever is on your mind... this space is yours."
+            ></textarea>
+            <div class="flex justify-end px-6 pb-4">
+              <span id="char-count" class="font-label text-xs text-outline" aria-live="polite">0 / 2000</span>
+            </div>
+          </div>
+
+          <!-- Inline error (announced) -->
+          <p id="form-error" role="alert" class="hidden rounded-lg border border-error/30 bg-error-container px-4 py-3 font-label text-sm text-on-error-container"></p>
+
+          <div class="flex justify-end">
+            <button
+              type="submit"
+              id="submit-btn"
+              class="flex items-center justify-center gap-2 rounded-full bg-primary px-8 py-3 font-label font-semibold text-on-primary shadow-sm transition-colors hover:bg-primary-container focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span class="material-symbols-outlined text-xl" aria-hidden="true">psychology</span>
+              Reflect with my companion
+            </button>
+          </div>
+        </form>
+      </section>
+
+      <!-- Right: Insights -->
+      <section class="lg:col-span-5" aria-labelledby="insights-heading">
+        <div class="sticky top-24 flex flex-col gap-4">
+          <div class="flex items-center gap-3">
+            <div class="flex h-8 w-8 items-center justify-center rounded-full bg-primary-container text-on-primary-container">
+              <span class="material-symbols-outlined text-base" aria-hidden="true" style="font-variation-settings:'FILL' 1;">psychology</span>
+            </div>
+            <h2 id="insights-heading" class="font-display text-xl font-semibold text-on-surface">Companion Insights</h2>
+          </div>
+
+          <!-- Empty state -->
+          <div id="empty-state" class="rounded-xl border border-dashed border-outline-variant bg-surface-container-low/60 p-8 text-center">
+            <span class="material-symbols-outlined mb-2 text-4xl text-outline-variant" aria-hidden="true">edit_note</span>
+            <p class="text-on-surface-variant">Your reflection will appear here once you share what's on your mind.</p>
+          </div>
+
+          <!-- Loading state -->
+          <div id="loading-state" class="hidden rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-8 text-center ambient" aria-live="polite">
+            <div class="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-surface-variant border-t-primary" aria-hidden="true"></div>
+            <p class="mt-4 text-on-surface-variant">Taking a moment to read and reflect...</p>
+          </div>
+
+          <!-- Results -->
+          <div id="results" class="hidden flex-col gap-4" aria-live="polite">
+            <!-- Crisis banner (assertively announced when present) -->
+            <div id="crisis-banner" role="alert" aria-live="assertive" hidden
+              class="rounded-xl border-2 border-error bg-error-container p-5">
+              <div class="flex items-start gap-3">
+                <span class="material-symbols-outlined text-error" aria-hidden="true" style="font-variation-settings:'FILL' 1;">favorite</span>
+                <div>
+                  <h3 class="font-display text-lg font-bold text-on-error-container">You are not alone</h3>
+                  <p id="crisis-message" class="mt-1 text-sm leading-relaxed text-on-error-container"></p>
+                  <ul id="crisis-helplines" class="mt-3 space-y-1 font-label text-sm font-semibold text-on-error-container"></ul>
+                </div>
+              </div>
+            </div>
+
+            <!-- Empathetic message -->
+            <div id="message-card" class="rounded-xl border border-primary/15 bg-surface-container-low p-5 ambient">
+              <p id="empathetic-message" class="border-l-2 border-secondary/40 pl-4 text-lg italic leading-relaxed text-secondary"></p>
+            </div>
+
+            <!-- Emotions + triggers -->
+            <div class="rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-5">
+              <h3 class="mb-3 font-label text-xs font-medium uppercase tracking-wider text-outline">What I noticed</h3>
+              <p class="mb-1 font-label text-sm text-on-surface-variant">Emotions</p>
+              <div id="emotions" class="mb-4 flex flex-wrap gap-2"></div>
+              <p class="mb-1 font-label text-sm text-on-surface-variant">Possible triggers</p>
+              <div id="triggers" class="flex flex-wrap gap-2"></div>
+            </div>
+
+            <!-- Coping strategy -->
+            <div class="rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-5">
+              <div class="mb-3 flex items-center gap-2">
+                <span class="material-symbols-outlined text-primary" aria-hidden="true">lightbulb</span>
+                <h3 id="coping-title" class="font-display text-base font-semibold text-on-surface"></h3>
+              </div>
+              <ol id="coping-steps" class="list-decimal space-y-2 pl-5 text-on-surface-variant"></ol>
+            </div>
+
+            <!-- Mindfulness -->
+            <div class="rounded-xl border border-secondary/20 bg-secondary-container/30 p-5">
+              <div class="mb-2 flex items-center gap-2">
+                <span class="material-symbols-outlined text-secondary" aria-hidden="true" style="font-variation-settings:'FILL' 1;">self_improvement</span>
+                <h3 class="font-display text-base font-semibold text-on-secondary-container">A small exercise</h3>
+              </div>
+              <p id="mindfulness" class="text-sm leading-relaxed text-on-secondary-container"></p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Footer: standing helplines + disclaimer (always visible) -->
+  <footer id="help" class="mt-8 border-t border-outline-variant/40 bg-surface-container-low">
+    <div class="mx-auto max-w-[1200px] px-6 py-8">
+      <h2 class="mb-3 font-display text-lg font-semibold text-on-surface">If you need to talk to someone now</h2>
+      <ul id="footer-helplines" class="mb-4 grid grid-cols-1 gap-2 font-label text-sm text-on-surface-variant sm:grid-cols-3"></ul>
+      <p class="font-label text-xs leading-relaxed text-outline">
+        MindCompanion offers supportive guidance and is not a substitute for professional
+        medical or psychological care. If you are in immediate danger, contact local
+        emergency services.
+      </p>
+    </div>
+  </footer>
+
+  <script src="/app.js"></script>
+</body>
+</html>
