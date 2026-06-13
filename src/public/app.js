@@ -36,12 +36,28 @@ document.addEventListener("DOMContentLoaded", () => {
     footerHelplines.appendChild(buildHelplineItem(line)),
   );
 
-  // Live character counter for the journal textarea.
+  // Live character counter for the journal textarea, with a warning near the limit.
+  const MAX_JOURNAL_CHARS = 2000;
   const updateCount = () => {
-    charCount.textContent = `${journalText.value.length} / 2000`;
+    const len = journalText.value.length;
+    charCount.textContent = `${len} / ${MAX_JOURNAL_CHARS}`;
+    charCount.classList.toggle("char-warn", len >= MAX_JOURNAL_CHARS - 100);
   };
   journalText.addEventListener("input", updateCount);
   updateCount();
+
+  // "Start a new entry" — reset the form and return to the empty state.
+  const resetBtn = document.getElementById("reset-btn");
+  resetBtn.addEventListener("click", () => {
+    form.reset();
+    updateCount();
+    hideError();
+    crisisBanner.hidden = true;
+    results.classList.add("hidden");
+    results.classList.remove("flex");
+    emptyState.classList.remove("hidden");
+    journalText.focus();
+  });
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -109,6 +125,15 @@ document.addEventListener("DOMContentLoaded", () => {
     emptyState.classList.add("hidden");
     results.classList.remove("hidden");
     results.classList.add("flex");
+
+    // Subtle entrance + move focus for orientation / screen-reader users.
+    results.classList.remove("reveal");
+    void results.offsetWidth; // restart the animation on each render
+    results.classList.add("reveal");
+    const focusTarget = data.crisisAlert
+      ? document.getElementById("crisis-banner")
+      : document.getElementById("insights-heading");
+    if (focusTarget) focusTarget.focus();
   }
 
   function renderCrisis(data) {

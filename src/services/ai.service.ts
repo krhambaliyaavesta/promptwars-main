@@ -1,28 +1,47 @@
 import { GoogleGenerativeAI, Schema, SchemaType } from "@google/generative-ai";
-import dotenv from "dotenv";
+import {
+  GEMINI_API_KEY,
+  GEMINI_MODEL,
+  IS_GEMINI_CONFIGURED,
+} from "../config.js";
 import {
   JournalEntryRequest,
   WellnessAnalysisResponse,
+  CopingStrategy,
 } from "../types/index.js";
 
-dotenv.config();
+// --- Tunable analysis constants ---
+const MOOD_LOW_THRESHOLD = 3; // <= this is treated as burnout/exhaustion
+const MOOD_MID_THRESHOLD = 6; // <= this is fatigued-but-coping
+const MAX_ACTIONABLE_STEPS = 3;
 
-const apiKey = process.env.GEMINI_API_KEY;
-const isApiKeyConfigured =
-  apiKey && apiKey !== "your_gemini_api_key_here" && apiKey.trim() !== "";
+const CRISIS_KEYWORDS = [
+  "suicide",
+  "kill myself",
+  "end my life",
+  "want to die",
+  "better off dead",
+  "giving up on life",
+  "ending it all",
+  "self-harm",
+  "harm myself",
+  "cut myself",
+  "hang myself",
+];
 
-// Initialize the Gemini SDK if key is configured
-let genAI: GoogleGenerativeAI | null = null;
-if (isApiKeyConfigured) {
-  genAI = new GoogleGenerativeAI(apiKey!);
+const CRISIS_HELPLINE_MESSAGE =
+  "It sounds like you are carrying an incredibly heavy weight right now, and I want you to know that your life and well-being are far more important than any exam. You do not have to go through this alone. Please connect with someone who can support you. You can reach out to Sneha India Helpline at +91-44-24640050 or Vandrevala Foundation at +91-9999666555. They offer free, confidential support 24/7.";
+
+// Lazily created Gemini client so the module loads cleanly even without a key.
+let client: GoogleGenerativeAI | null = null;
+function getGeminiClient(): GoogleGenerativeAI | null {
+  if (!IS_GEMINI_CONFIGURED) return null;
+  if (!client) client = new GoogleGenerativeAI(GEMINI_API_KEY!);
+  return client;
 }
 
-// Model name is configurable so it can be updated without code changes as Google
-// rotates model versions. Defaults to a current stable Flash model.
-const GEMINI_MODEL = process.env.GEMINI_MODEL?.trim() || "gemini-2.5-flash";
-
 /**
- * Enforces strict schema return from Gemini matching the WellnessAnalysisResponse interface
+ * Strict schema that forces Gemini to return the WellnessAnalysisResponse shape.
  */
 const wellnessAnalysisSchema: Schema = {
   type: SchemaType.OBJECT,
@@ -100,18 +119,43 @@ Respond ONLY in valid JSON matching the specified schema.
 `;
 
 /**
- * Analyzes a student's journal entry to detect burnout, stress, and crisis alerts.
- * Uses Gemini AI if the API key is configured; otherwise falls back to the offline mock analyzer.
+ * Runtime type guard: verifies a parsed value matches WellnessAnalysisResponse
+ * before we trust it. Protects the UI from malformed model output.
+ */
+function isWellnessAnalysisResponse(
+  value: unknown,
+): value is WellnessAnalysisResponse {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  const coping = v.copingStrategy as Record<string, unknown> | undefined;
+  return (
+    Array.isArray(v.detectedEmotions) &&
+    Array.isArray(v.hiddenTriggers) &&
+    typeof coping === "object" &&
+    coping !== null &&
+    typeof coping.title === "string" &&
+    Array.isArray(coping.actionableSteps) &&
+    typeof v.mindfulnessExercise === "string" &&
+    typeof v.empatheticMessage === "string" &&
+    typeof v.crisisAlert === "boolean"
+  );
+}
+
+/**
+ * Analyzes a student's journal entry to detect burnout, stress, and crisis signals.
+ * Uses Gemini when configured; otherwise (or on any failure) falls back to the
+ * deterministic offline analyzer so the service never crashes.
  */
 export async function analyzeJournal(
   entry: JournalEntryRequest,
 ): Promise<WellnessAnalysisResponse> {
-  if (!isApiKeyConfigured || !genAI) {
+  const gemini = getGeminiClient();
+  if (!gemini) {
     return generateOfflineMockAnalysis(entry);
   }
 
   try {
-    const model = genAI.getGenerativeModel({
+    const model = gemini.getGenerativeModel({
       model: GEMINI_MODEL,
       generationConfig: {
         responseMimeType: "application/json",
@@ -128,123 +172,131 @@ export async function analyzeJournal(
     `;
 
     const result = await model.generateContent(prompt);
-    const text = result.response.text();
-    const parsedData = JSON.parse(text);
+    const parsed: unknown = JSON.parse(result.response.text());
 
-    return parsedData as WellnessAnalysisResponse;
+    if (!isWellnessAnalysisResponse(parsed)) {
+      console.error(
+        "Gemini returned an unexpected shape; using offline fallback.",
+      );
+      return generateOfflineMockAnalysis(entry);
+    }
+
+    return parsed;
   } catch (error) {
-    console.error("Gemini API Error, falling back to mock:", error);
-    // If the API fails mid-way, fall back to mock to ensure non-crashing service
+    console.error("Gemini API error, falling back to offline analysis:", error);
     return generateOfflineMockAnalysis(entry);
   }
 }
 
-/**
- * Generates an offline fallback response that mimics the student wellness counselor.
- * Employs heuristic-based crisis detection to simulate safety behaviors offline.
- */
-export function generateOfflineMockAnalysis(
-  entry: JournalEntryRequest,
-): WellnessAnalysisResponse {
-  const textLower = entry.journalText.toLowerCase();
+// --- Offline analyzer (deterministic, no network) ---
 
-  // Crisis detection heuristics
-  const crisisKeywords = [
-    "suicide",
-    "kill myself",
-    "end my life",
-    "want to die",
-    "better off dead",
-    "giving up on life",
-    "ending it all",
-    "self-harm",
-    "harm myself",
-    "cut myself",
-    "hang myself",
-  ];
+/** Detects explicit crisis language in the (lowercased) journal text. */
+function containsCrisisLanguage(textLower: string): boolean {
+  return CRISIS_KEYWORDS.some((keyword) => textLower.includes(keyword));
+}
 
-  const hasCrisisWords = crisisKeywords.some((keyword) =>
-    textLower.includes(keyword),
-  );
+/** The safety-first response returned whenever crisis language is detected. */
+function buildCrisisResponse(): WellnessAnalysisResponse {
+  return {
+    detectedEmotions: ["Overwhelmed", "Despair", "Severe Hopelessness"],
+    hiddenTriggers: [
+      "Academic exhaustion",
+      "Severe mental distress",
+      "Isolation",
+    ],
+    copingStrategy: {
+      title: "Immediate Safety & Professional Support",
+      actionableSteps: [
+        "Stop studying immediately and step away from your study desk.",
+        "Reach out to a trusted family member, friend, or mentor to let them know how you feel.",
+        "Contact professional counselors who specialize in student crisis support.",
+      ],
+    },
+    mindfulnessExercise:
+      "Box Breathing: Inhale for 4 seconds, hold for 4 seconds, exhale for 4 seconds, hold for 4 seconds. Focus only on the count.",
+    empatheticMessage: CRISIS_HELPLINE_MESSAGE,
+    crisisAlert: true,
+  };
+}
 
-  if (hasCrisisWords) {
+interface MoodAnalysis {
+  emotions: string[];
+  triggers: string[];
+  copingStrategy: CopingStrategy;
+  mindfulnessExercise: string;
+  empatheticMessage: string;
+}
+
+/** Produces a baseline analysis driven by the numeric mood score. */
+function analyzeByMood(moodScore: number, targetExam: string): MoodAnalysis {
+  if (moodScore <= MOOD_LOW_THRESHOLD) {
     return {
-      detectedEmotions: ["Overwhelmed", "Despair", "Severe Hopelessness"],
-      hiddenTriggers: [
-        "Academic exhaustion",
-        "Severe mental distress",
-        "Isolation",
+      emotions: ["Exhausted", "Anxious", "Stressed"],
+      triggers: [
+        "Burnout from high-intensity study schedule",
+        "Anxiety about exam results",
       ],
       copingStrategy: {
-        title: "Immediate Safety & Professional Support",
+        title: "Cognitive Offloading & Recovery",
         actionableSteps: [
-          "Stop studying immediately and step away from your study desk.",
-          "Reach out to a trusted family member, friend, or mentor to let them know how you feel.",
-          "Contact professional counselors who specialize in student crisis support.",
+          "Take a complete 2-hour break from all exam preparation books and devices.",
+          "Go for a 15-minute walk outside in natural light.",
+          "Break your target preparation topics into micro-tasks of 20 minutes each.",
         ],
       },
       mindfulnessExercise:
-        "Box Breathing: Inhale for 4 seconds, hold for 4 seconds, exhale for 4 seconds, hold for 4 seconds. Focus only on the count.",
-      empatheticMessage:
-        "It sounds like you are carrying an incredibly heavy weight right now, and I want you to know that your life and well-being are far more important than any exam. You do not have to go through this alone. Please connect with someone who can support you. You can reach out to Sneha India Helpline at +91-44-24640050 or Vandrevala Foundation at +91-9999666555. They offer free, confidential support 24/7.",
-      crisisAlert: true,
+        "5-4-3-2-1 Grounding: Name 5 things you see, 4 you can touch, 3 you hear, 2 you smell, and 1 you taste.",
+      empatheticMessage: `Preparing for ${targetExam} is a marathon, not a sprint. A mood score of ${moodScore} indicates you are running on empty. It is okay to take a step back and rest; resting is a crucial part of studying effectively.`,
     };
   }
 
-  // Normal offline analysis based on mood score and input contents
-  const emotions: string[] = [];
-  const triggers: string[] = [];
-  let copingTitle = "Balanced Study Scheduling";
-  let copingSteps: string[] = [];
-  let exercise = "Deep Breathing: 5 cycles of slow inhalation and exhalation.";
-  let message = "";
-
-  // Analyze Mood Score
-  if (entry.moodScore <= 3) {
-    emotions.push("Exhausted", "Anxious", "Stressed");
-    triggers.push(
-      "Burnout from high-intensity study schedule",
-      "Anxiety about exam results",
-    );
-    copingTitle = "Cognitive Offloading & Recovery";
-    copingSteps = [
-      "Take a complete 2-hour break from all exam preparation books and devices.",
-      "Go for a 15-minute walk outside in natural light.",
-      "Break your target preparation topics into micro-tasks of 20 minutes each.",
-    ];
-    exercise =
-      "5-4-3-2-1 Grounding: Name 5 things you see, 4 you can touch, 3 you hear, 2 you smell, and 1 you taste.";
-    message = `Preparing for ${entry.targetExam} is a marathon, not a sprint. A mood score of ${entry.moodScore} indicates you are running on empty. It is okay to take a step back and rest; resting is a crucial part of studying effectively.`;
-  } else if (entry.moodScore <= 6) {
-    emotions.push("Apprehensive", "Fatigued", "Determined");
-    triggers.push(
-      "Peer pressure or high expectations",
-      "Inconsistent sleep pattern",
-    );
-    copingTitle = "Sustained Focus & Pacing";
-    copingSteps = [
-      "Implement the Pomodoro Technique (25 mins study, 5 mins break).",
-      "Dedicate at least 7 hours to sleep tonight.",
-      "Write down one topic you mastered today to build self-confidence.",
-    ];
-    exercise =
-      "4-7-8 Breathing Technique: Inhale for 4 seconds, hold for 7 seconds, and exhale completely for 8 seconds.";
-    message = `You are maintaining a steady course, but there are clear signs of fatigue under the surface. Make sure you don't compromise your sleep for ${entry.targetExam} prep. You are doing well!`;
-  } else {
-    emotions.push("Focused", "Motivated", "Calm");
-    triggers.push("Minor time-management pressure");
-    copingTitle = "Optimizing High Performance";
-    copingSteps = [
-      "Review your progress tracker to celebrate small wins.",
-      "Schedule active recall sessions for your most challenging topics.",
-      "Hydrate frequently throughout the day.",
-    ];
-    exercise =
-      "Mindful Listening: Sit quietly and focus solely on the ambient sounds around you for 2 minutes.";
-    message = `It is wonderful to see you in a focused and calm state. Preparing for ${entry.targetExam} requires this level of mindfulness and dedication. Keep up this healthy momentum!`;
+  if (moodScore <= MOOD_MID_THRESHOLD) {
+    return {
+      emotions: ["Apprehensive", "Fatigued", "Determined"],
+      triggers: [
+        "Peer pressure or high expectations",
+        "Inconsistent sleep pattern",
+      ],
+      copingStrategy: {
+        title: "Sustained Focus & Pacing",
+        actionableSteps: [
+          "Implement the Pomodoro Technique (25 mins study, 5 mins break).",
+          "Dedicate at least 7 hours to sleep tonight.",
+          "Write down one topic you mastered today to build self-confidence.",
+        ],
+      },
+      mindfulnessExercise:
+        "4-7-8 Breathing Technique: Inhale for 4 seconds, hold for 7 seconds, and exhale completely for 8 seconds.",
+      empatheticMessage: `You are maintaining a steady course, but there are clear signs of fatigue under the surface. Make sure you don't compromise your sleep for ${targetExam} prep. You are doing well!`,
+    };
   }
 
-  // Check custom text clues for specific exam struggles
+  return {
+    emotions: ["Focused", "Motivated", "Calm"],
+    triggers: ["Minor time-management pressure"],
+    copingStrategy: {
+      title: "Optimizing High Performance",
+      actionableSteps: [
+        "Review your progress tracker to celebrate small wins.",
+        "Schedule active recall sessions for your most challenging topics.",
+        "Hydrate frequently throughout the day.",
+      ],
+    },
+    mindfulnessExercise:
+      "Mindful Listening: Sit quietly and focus solely on the ambient sounds around you for 2 minutes.",
+    empatheticMessage: `It is wonderful to see you in a focused and calm state. Preparing for ${targetExam} requires this level of mindfulness and dedication. Keep up this healthy momentum!`,
+  };
+}
+
+/**
+ * Layers in extra triggers and coping steps based on specific keywords found in
+ * the text. Mutates the provided triggers and steps arrays.
+ */
+function applyContextualTriggers(
+  textLower: string,
+  triggers: string[],
+  copingSteps: string[],
+): void {
   if (
     textLower.includes("mock test") ||
     textLower.includes("marks") ||
@@ -265,20 +317,36 @@ export function generateOfflineMockAnalysis(
       "Create a structured checklist focusing on high-weightage topics first to clear backlogs systematically.",
     );
   }
+}
 
-  // De-duplicate lists
-  const uniqueEmotions = Array.from(new Set(emotions));
-  const uniqueTriggers = Array.from(new Set(triggers));
+/**
+ * Generates an offline fallback response that mimics the student wellness counselor.
+ * Employs heuristic-based crisis detection to preserve safety behavior offline.
+ */
+export function generateOfflineMockAnalysis(
+  entry: JournalEntryRequest,
+): WellnessAnalysisResponse {
+  const textLower = entry.journalText.toLowerCase();
+
+  if (containsCrisisLanguage(textLower)) {
+    return buildCrisisResponse();
+  }
+
+  const base = analyzeByMood(entry.moodScore, entry.targetExam);
+  const triggers = [...base.triggers];
+  const copingSteps = [...base.copingStrategy.actionableSteps];
+
+  applyContextualTriggers(textLower, triggers, copingSteps);
 
   return {
-    detectedEmotions: uniqueEmotions,
-    hiddenTriggers: uniqueTriggers,
+    detectedEmotions: Array.from(new Set(base.emotions)),
+    hiddenTriggers: Array.from(new Set(triggers)),
     copingStrategy: {
-      title: copingTitle,
-      actionableSteps: copingSteps.slice(0, 3),
+      title: base.copingStrategy.title,
+      actionableSteps: copingSteps.slice(0, MAX_ACTIONABLE_STEPS),
     },
-    mindfulnessExercise: exercise,
-    empatheticMessage: message,
+    mindfulnessExercise: base.mindfulnessExercise,
+    empatheticMessage: base.empatheticMessage,
     crisisAlert: false,
   };
 }

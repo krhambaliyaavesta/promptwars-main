@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description" content="MindCompanion - a supportive AI wellness companion for students preparing for high-stakes exams. Reflect in a journal and receive empathetic, structured insights." />
   <title>MindCompanion - Daily Check-in</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23266657'%3E%3Cpath d='M12 21s-7-4.5-9-8C1 9 3 5 7 5c2 0 3 1 5 3 2-2 3-3 5-3 4 0 6 4 4 8-2 3.5-9 8-9 8z'/%3E%3C/svg%3E" />
   <link href="https://fonts.googleapis.com" rel="preconnect" />
   <link crossorigin href="https://fonts.gstatic.com" rel="preconnect" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -60,13 +61,19 @@
     .mood-chip .peer:checked + .chip { @apply border-primary bg-primary-container/30 font-semibold text-primary; }
     .mood-chip .peer:focus-visible + .chip { @apply ring-2 ring-primary ring-offset-2 ring-offset-background; }
     .chip:hover { @apply bg-surface-container; }
+    /* Subtle, reduced-motion-safe entrance for results */
+    .reveal { animation: reveal 0.4s ease both; }
+    @keyframes reveal { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { .reveal { animation: none !important; } }
+    /* Character counter warning near the limit */
+    .char-warn { @apply font-semibold text-error; }
     /* Respect reduced-motion preferences */
     @media (prefers-reduced-motion: reduce) {
       .animate-spin, .animate-pulse { animation: none !important; }
     }
   </style>
 </head>
-<body class="min-h-screen bg-background font-sans text-on-surface antialiased">
+<body class="flex min-h-screen flex-col bg-background font-sans text-on-surface antialiased">
   <!-- Header -->
   <header class="sticky top-0 z-40 h-16 border-b border-outline-variant/40 bg-surface/85 backdrop-blur-md">
     <div class="mx-auto flex h-full max-w-[1200px] items-center justify-between px-6">
@@ -89,7 +96,7 @@
     </div>
   </div>
 
-  <main class="mx-auto max-w-[1200px] px-6 py-8">
+  <main class="mx-auto w-full max-w-[1200px] flex-1 px-6 py-8">
     <!-- Greeting -->
     <div class="mb-8 flex flex-col gap-1">
       <p class="font-label text-sm text-outline">Your private space</p>
@@ -100,9 +107,9 @@
       </p>
     </div>
 
-    <div class="grid grid-cols-1 gap-6 lg:grid-cols-12">
-      <!-- Left: Journal form -->
-      <section class="lg:col-span-7" aria-labelledby="form-heading">
+    <div class="grid grid-cols-1 gap-6 lg:grid-cols-12 lg:items-start">
+      <!-- Left: Journal form (stays in view while insights scroll on large screens) -->
+      <section class="lg:col-span-7 lg:sticky lg:top-24 lg:self-start" aria-labelledby="form-heading">
         <form id="journal-form" class="flex flex-col gap-6">
           <h2 id="form-heading" class="sr-only">Journal entry form</h2>
 
@@ -210,22 +217,22 @@
 
       <!-- Right: Insights -->
       <section class="lg:col-span-5" aria-labelledby="insights-heading">
-        <div class="sticky top-24 flex flex-col gap-4">
+        <div class="flex flex-col gap-4">
           <div class="flex items-center gap-3">
             <div class="flex h-8 w-8 items-center justify-center rounded-full bg-primary-container text-on-primary-container">
               <span class="material-symbols-outlined text-base" aria-hidden="true" style="font-variation-settings:'FILL' 1;">psychology</span>
             </div>
-            <h2 id="insights-heading" class="font-display text-xl font-semibold text-on-surface">Companion Insights</h2>
+            <h2 id="insights-heading" tabindex="-1" class="font-display text-xl font-semibold text-on-surface focus:outline-none">Companion Insights</h2>
           </div>
 
           <!-- Empty state -->
-          <div id="empty-state" class="rounded-xl border border-dashed border-outline-variant bg-surface-container-low/60 p-8 text-center">
+          <div id="empty-state" class="flex min-h-[460px] flex-col items-center justify-center rounded-xl border border-dashed border-outline-variant bg-surface-container-low/60 p-8 text-center">
             <span class="material-symbols-outlined mb-2 text-4xl text-outline-variant" aria-hidden="true">edit_note</span>
             <p class="text-on-surface-variant">Your reflection will appear here once you share what's on your mind.</p>
           </div>
 
           <!-- Loading state -->
-          <div id="loading-state" class="hidden rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-8 text-center ambient" aria-live="polite">
+          <div id="loading-state" class="hidden flex min-h-[460px] flex-col items-center justify-center rounded-xl border border-outline-variant/40 bg-surface-container-lowest p-8 text-center ambient" aria-live="polite">
             <div class="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-surface-variant border-t-primary" aria-hidden="true"></div>
             <p class="mt-4 text-on-surface-variant">Taking a moment to read and reflect...</p>
           </div>
@@ -233,8 +240,8 @@
           <!-- Results -->
           <div id="results" class="hidden flex-col gap-4" aria-live="polite">
             <!-- Crisis banner (assertively announced when present) -->
-            <div id="crisis-banner" role="alert" aria-live="assertive" hidden
-              class="rounded-xl border-2 border-error bg-error-container p-5">
+            <div id="crisis-banner" role="alert" aria-live="assertive" tabindex="-1" hidden
+              class="rounded-xl border-2 border-error bg-error-container p-5 focus:outline-none">
               <div class="flex items-start gap-3">
                 <span class="material-symbols-outlined text-error" aria-hidden="true" style="font-variation-settings:'FILL' 1;">favorite</span>
                 <div>
@@ -275,6 +282,18 @@
                 <h3 class="font-display text-base font-semibold text-on-secondary-container">A small exercise</h3>
               </div>
               <p id="mindfulness" class="text-sm leading-relaxed text-on-secondary-container"></p>
+            </div>
+
+            <!-- Start over -->
+            <div class="flex justify-center pt-1">
+              <button
+                type="button"
+                id="reset-btn"
+                class="flex items-center gap-2 rounded-full border border-outline-variant px-5 py-2 font-label text-sm font-medium text-on-surface-variant transition-colors hover:bg-surface-container focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              >
+                <span class="material-symbols-outlined text-base" aria-hidden="true">refresh</span>
+                Start a new entry
+              </button>
             </div>
           </div>
         </div>

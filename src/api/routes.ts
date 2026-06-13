@@ -1,43 +1,62 @@
 import { Router, Request, Response, NextFunction } from "express";
 import rateLimit from "express-rate-limit";
 import { analyzeJournal } from "../services/ai.service.js";
-import { JournalEntryRequest } from "../types/index.js";
+import { WellnessAnalysisResponse } from "../types/index.js";
+import { validateJournalRequest } from "./validation.js";
+import {
+  CACHE_DURATION_MS,
+  RATE_LIMIT_WINDOW_MS,
+  RATE_LIMIT_MAX,
+  IS_TEST,
+} from "../config.js";
 
 const router = Router();
 
-// Rate limiting: prevent abuse of AI endpoints
+// Rate limiting: prevent abuse of the AI endpoint.
 const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_MAX,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
     status: "error",
-    message: "Too many requests from this IP, please try again after 15 minutes"
-  }
+    message:
+      "Too many requests from this IP, please try again after 15 minutes",
+  },
 });
 
-// Cache interface
+// Simple in-memory cache for identical requests within the cache window.
 interface CacheEntry {
-  data: any;
+  data: WellnessAnalysisResponse;
   expiry: number;
 }
 const cache = new Map<string, CacheEntry>();
-const CACHE_DURATION = 10 * 60 * 1000; // 10 minutes (Hackathon constraint)
 
-// Helper to clean up expired cache entries
-const cleanExpiredCache = () => {
+/** Removes expired entries so the cache map does not grow unbounded. */
+function cleanExpiredCache(): void {
   const now = Date.now();
   for (const [key, entry] of cache.entries()) {
     if (now > entry.expiry) {
       cache.delete(key);
     }
   }
-};
+}
+
+/** Builds a stable cache key from the sanitized request payload. */
+function buildCacheKey(value: WellnessAnalysisRequestKey): string {
+  return `wellness:${value.journalText}:${value.moodScore}:${value.targetExam}`;
+}
+
+interface WellnessAnalysisRequestKey {
+  journalText: string;
+  moodScore: number;
+  targetExam: string;
+}
 
 /**
  * POST /api/analyze-journal
- * Analyzes the user's journal text, mood, and target exam.
+ * Validates the request, serves from cache when possible, otherwise calls the
+ * AI service and caches the structured result.
  */
 router.post(
   "/analyze-journal",
@@ -46,85 +65,42 @@ router.post(
     try {
       cleanExpiredCache();
 
-      const { journalText, moodScore, targetExam } = req.body;
-
-      // Validate inputs exist
-      if (journalText === undefined || moodScore === undefined || targetExam === undefined) {
-        res.status(400).json({
-          status: "error",
-          message: "Missing parameters. Please provide 'journalText', 'moodScore', and 'targetExam'."
-        });
+      const validation = validateJournalRequest(req.body);
+      if (!validation.ok) {
+        res.status(400).json({ status: "error", message: validation.message });
         return;
       }
 
-      // Type validations
-      if (typeof journalText !== "string" || journalText.trim() === "") {
-        res.status(400).json({
-          status: "error",
-          message: "Invalid or empty 'journalText'. It must be a non-empty string."
-        });
-        return;
-      }
+      const entry = validation.value;
+      const cacheKey = buildCacheKey(entry);
 
-      const parsedMood = Number(moodScore);
-      if (isNaN(parsedMood) || !Number.isInteger(parsedMood) || parsedMood < 1 || parsedMood > 10) {
-        res.status(400).json({
-          status: "error",
-          message: "Invalid 'moodScore'. It must be an integer between 1 and 10."
-        });
-        return;
-      }
-
-      if (typeof targetExam !== "string" || targetExam.trim() === "") {
-        res.status(400).json({
-          status: "error",
-          message: "Invalid or empty 'targetExam'. It must be a non-empty string."
-        });
-        return;
-      }
-
-      // Input Sanitization to prevent prompt injection and payload crashing
-      // Limit journalText length to 2000 characters and targetExam to 100 characters
-      const sanitizedJournal = journalText.trim().substring(0, 2000);
-      const sanitizedExam = targetExam.trim().substring(0, 100);
-
-      // Caching key creation (exact match within 10-minute window)
-      const cacheKey = `wellness:${sanitizedJournal}:${parsedMood}:${sanitizedExam}`;
       const cached = cache.get(cacheKey);
-
       if (cached && Date.now() < cached.expiry) {
         res.json(cached.data);
         return;
       }
 
-      const requestEntry: JournalEntryRequest = {
-        journalText: sanitizedJournal,
-        moodScore: parsedMood,
-        targetExam: sanitizedExam
-      };
+      // Falls back to the offline mock automatically if no API key is configured.
+      const analysisResult = await analyzeJournal(entry);
 
-      // Call AI service (falls back to mock if API key is not configured)
-      const analysisResult = await analyzeJournal(requestEntry);
-
-      // Cache the successful response
       cache.set(cacheKey, {
         data: analysisResult,
-        expiry: Date.now() + CACHE_DURATION
+        expiry: Date.now() + CACHE_DURATION_MS,
       });
 
       res.json(analysisResult);
     } catch (error) {
-      next(error); // Forward to the Express global error handler
+      next(error); // Forward to the Express global error handler.
     }
-  }
+  },
 );
 
-/**
- * Expose clear cache endpoint for testing convenience
- */
-router.post("/clear-cache", (req: Request, res: Response) => {
-  cache.clear();
-  res.json({ status: "success", message: "Cache cleared" });
-});
+// Test-only helper to reset the in-memory cache between test cases.
+if (IS_TEST) {
+  router.post("/clear-cache", (_req: Request, res: Response) => {
+    cache.clear();
+    res.json({ status: "success", message: "Cache cleared" });
+  });
+}
 
 export default router;

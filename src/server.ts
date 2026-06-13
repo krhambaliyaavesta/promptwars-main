@@ -2,19 +2,12 @@ import express, { Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import cors from "cors";
 import path from "path";
-import { fileURLToPath } from "url";
 import routes from "./api/routes.js";
-import dotenv from "dotenv";
-
-dotenv.config();
+import { PORT, PUBLIC_DIR, IS_TEST } from "./config.js";
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-// Resolve public directory path
-const publicPath = path.resolve("src/public");
-
-// Security Middlewares
+// Security middlewares
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -23,7 +16,7 @@ app.use(
         scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.tailwindcss.com"],
         styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
         fontSrc: ["'self'", "https://fonts.gstatic.com"],
-        imgSrc: ["'self'", "data:", "https://*"],
+        imgSrc: ["'self'", "data:"],
         connectSrc: ["'self'"],
       },
     },
@@ -33,19 +26,18 @@ app.use(
 app.use(cors());
 app.use(express.json());
 
-// Register API Routes
+// API routes
 app.use("/api", routes);
 
-// Lightweight health check (kept out of the way of the static frontend)
-app.get("/api/health", (req: Request, res: Response) => {
+// Lightweight health check (kept out of the way of the static frontend).
+app.get("/api/health", (_req: Request, res: Response) => {
   res.json({ status: "ok", message: "Wellness API Online" });
 });
 
-// Serve frontend static assets from public folder (index.html served at "/").
-// Cache fingerprint-free assets briefly, but always revalidate index.html so the
-// latest UI is served after a deploy.
+// Serve frontend static assets (index.html served at "/"). Cache fingerprint-free
+// assets briefly, but always revalidate index.html so the latest UI is served.
 app.use(
-  express.static(publicPath, {
+  express.static(PUBLIC_DIR, {
     maxAge: "1h",
     setHeaders: (res, filePath) => {
       if (filePath.endsWith("index.html")) {
@@ -55,26 +47,26 @@ app.use(
   }),
 );
 
-// Fallback to index.html for single page layout
+// Single-page fallback to index.html for any non-API route.
 app.get("*", (req: Request, res: Response, next: NextFunction) => {
   if (req.path.startsWith("/api/")) {
     return next();
   }
   res.setHeader("Cache-Control", "no-cache");
-  res.sendFile(path.join(publicPath, "index.html"));
+  res.sendFile(path.join(PUBLIC_DIR, "index.html"));
 });
 
-// Global Error Handler
-app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-  console.error("Express Unhandled Error Details:", err);
+// Global error handler.
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  console.error("Express unhandled error:", err);
   res.status(500).json({
     status: "error",
     message: "An internal server error occurred while processing your request.",
   });
 });
 
-// Avoid binding port in test environment for supertest compliance
-if (process.env.NODE_ENV !== "test") {
+// Avoid binding the port under test so supertest can import the app cleanly.
+if (!IS_TEST) {
   app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
   });
